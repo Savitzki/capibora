@@ -8,6 +8,33 @@ const clientPromise = accountConfigured
   : Promise.resolve(null);
 export const getBackendClient = () => clientPromise;
 
+export async function requestPasswordChange(accessToken: string, password: string) {
+  const response = await fetch(`${url.replace(/\/+$/, "")}/auth/v1/user`, {
+    method: "PUT", headers: { apikey: key, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ password }), redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15000),
+  });
+  if (response.status === 401) throw new Error("O link expirou. Solicite outro link de recuperação");
+  if (!response.ok) throw new Error("Não foi possível alterar a senha. Use uma senha forte e tente novamente");
+}
+
+/** The captured session prevents a later account switch from changing the target. */
+export async function requestAccountDeletion(accessToken: string) {
+  if (!accountConfigured) throw new Error("O serviço online ainda não foi configurado");
+  const response = await fetch(`${url.replace(/\/+$/, "")}/functions/v1/delete-account`, {
+    method: "POST",
+    headers: { apikey: key, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation: "EXCLUIR MINHA CONTA" }),
+    redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15000),
+  });
+  const result = await response.json().catch(() => null);
+  if ([404, 503].includes(response.status))
+    throw new Error("A exclusão de conta ainda precisa ser ativada pelo responsável pelo app");
+  if (response.status === 401)
+    throw new Error("Entre novamente antes de excluir sua conta");
+  if (!response.ok || result?.deleted !== true)
+    throw new Error("Não foi possível confirmar a exclusão da conta. Confira a conexão e tente novamente");
+}
+
 export async function requestNicknameSession(
   nickname: string,
   password: string,

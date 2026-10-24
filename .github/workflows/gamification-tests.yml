@@ -33,3 +33,5 @@ jobs:
         run: bash scripts/test-profiles-db.sh
       - name: Cinco etapas e concorrência em PostgreSQL descartável
         run: bash scripts/test-gamification-db.sh
+      - name: Revisão final e fronteiras de concorrência em banco descartável
+        run: bash scripts/test-final-review-db.sh

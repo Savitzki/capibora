@@ -1,3 +1,4 @@
+import { STORAGE_KEY } from "./model";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { localDate, shiftDate, type Workout } from "./model";
@@ -320,4 +321,27 @@ it("trocar de conta descarta cota antiga e uma resposta tardia não a restaura",
   );
   expect(hook.result.current.state?.tauntAllowance?.sentTo).toEqual([]);
   hook.unmount();
+});
+
+it("não reenvia uma declaração rejeitada definitivamente, inclusive após reabrir", async () => {
+  const uid = "permanent-manual-rejection";
+  const pending: Workout = { id: "rejected-manual", date: localDate(), activity: "Yoga", minutes: 40, method: "manual", manualConfirmation: { version: 1, questionIds: ["real", "honest"], answers: [true, true, true] } };
+  rpc.mockImplementation(async (name: string) => {
+    if (name === "confirm_manual_workout") throw Object.assign(new Error("Declaração recusada"), { kind: "validation" });
+    return empty;
+  });
+  const first = renderHook(() => useSocial(true, [pending], vi.fn(), "UTC", pending.date, uid));
+  await waitFor(() => expect(first.result.current.error).toBe("Declaração recusada"));
+  await act(async () => { await first.result.current.refresh(); });
+  first.unmount();
+  const reopened = renderHook(() => useSocial(true, [pending], vi.fn(), "UTC", pending.date, uid));
+  await waitFor(() => expect(reopened.result.current.state).not.toBeNull());
+  await act(async () => { await reopened.result.current.refresh(); });
+  expect(rpc.mock.calls.filter(([name]) => name === "confirm_manual_workout")).toHaveLength(1);
+  expect(reopened.result.current.error).toBe("Declaração recusada");
+  const remote = { ...pending, confirmedAt: new Date().toISOString() };
+  rpc.mockResolvedValue({ ...empty, workouts: [remote] });
+  await act(async () => { await reopened.result.current.refresh(); });
+  expect(reopened.result.current.error).toBe("");
+  expect(localStorage.getItem(`${STORAGE_KEY}:account:${uid}:manual-rejection`)).toBeNull();
 });

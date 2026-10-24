@@ -32,6 +32,11 @@ function account(): Account {
     resendConfirmation: vi.fn(),
     signIn: vi.fn(),
     signOut: vi.fn(),
+    deleteAccount: vi.fn(),
+    passwordRecovery: false,
+    requestPasswordReset: vi.fn(),
+    updatePassword: vi.fn(),
+    dismissPasswordRecovery: vi.fn(),
     signInWithGoogle: vi.fn(),
     saveProfile: vi.fn().mockResolvedValue(undefined),
   };
@@ -362,4 +367,15 @@ it("exige nome, sexo explícito e usuário sem @ somente no primeiro perfil", as
   await userEvent.type(screen.getByLabelText("Nome de usuário"), "Dani");
   await userEvent.click(screen.getByRole("button", { name: "Salvar perfil" }));
   expect(auth.saveProfile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ nickname: "Dani" }), { displayName: "Daniela", treatment: "feminine" });
+});
+
+it("pede confirmação contextual antes de descartar registros manuais no logout", async () => {
+  const { PendingWorkoutLogoutError } = await import("./accountStorage");
+  const auth = account();
+  vi.mocked(auth.signOut).mockRejectedValueOnce(new PendingWorkoutLogoutError()).mockResolvedValueOnce();
+  render(<ProfilePanel profile={profile} account={auth} onSaveLocal={vi.fn()} onSaved={vi.fn()} />);
+  await userEvent.click(screen.getByRole("button", { name: "Sair da conta" }));
+  expect(screen.getByRole("alert")).toHaveTextContent(/rascunhos serão descartados/);
+  await userEvent.click(screen.getByRole("button", { name: "Sair e descartar rascunhos" }));
+  expect(auth.signOut).toHaveBeenLastCalledWith(true);
 });

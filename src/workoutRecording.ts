@@ -44,6 +44,18 @@ export type RecordingState = {
   maximumMinutes: number;
   session: WorkoutSession | null;
 };
+/** Presentation only; confirmation and the definitive day remain server-owned. */
+export function minimumCrossesMidnight(state: RecordingState, elapsedSeconds = 0) {
+  const start = Date.parse(state.serverNow) + Math.max(0, elapsedSeconds) * 1000;
+  try {
+    const day = new Intl.DateTimeFormat("en-CA", {
+      timeZone: state.timezone, year: "numeric", month: "2-digit", day: "2-digit",
+    });
+    return day.format(start) !== day.format(start + state.minimumMinutes * 60000);
+  } catch {
+    return false;
+  }
+}
 export function validReview(value: unknown): value is WorkoutReview {
   const r = value as WorkoutReview;
   return Boolean(

@@ -89,6 +89,11 @@ beforeEach(() => {
         profile,
       }),
     ),
+    deleteAccount: vi.fn(),
+    passwordRecovery: false,
+    requestPasswordReset: vi.fn(),
+    updatePassword: vi.fn(),
+    dismissPasswordRecovery: vi.fn(),
     signOut: vi.fn().mockImplementation(async () => {
       clearAccountStorage("guest-login");
       changeAccount({ user: null, profile: null });

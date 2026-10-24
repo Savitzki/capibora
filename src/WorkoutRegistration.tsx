@@ -30,6 +30,7 @@ import {
   FEELING_NAMES,
   WORKOUT_ACTIVITIES,
   timerText,
+  minimumCrossesMidnight,
   validReview,
 } from "./workoutRecording";
 import {
@@ -181,6 +182,15 @@ export function WorkoutRegistration({
       formHeading.current?.focus({ preventScroll: true });
   }, [method, interrogating]);
   const minimum = controller.state?.minimumMinutes ?? 35;
+  const [, refreshHint] = useState(0);
+  useEffect(() => {
+    if (method !== "timed") return;
+    const timer = window.setInterval(() => refreshHint((n) => n + 1), 30000);
+    return () => window.clearInterval(timer);
+  }, [method]);
+  const crossesMidnight = controller.state && minimumCrossesMidnight(
+    controller.state, (performance.now() - controller.anchor.current) / 1000,
+  );
   const manualMinimum = Math.max(MANUAL_MINIMUM_MINUTES, minimum);
   const durationTooShort =
     minutes.trim() !== "" &&
@@ -401,6 +411,9 @@ export function WorkoutRegistration({
         <p className="form-error" role="alert">
           {error || controller.error}
         </p>
+      )}
+      {method === "timed" && crossesMidnight && (
+        <p className="field-hint">O treino conta para o dia em que for finalizado.</p>
       )}
       <button
         className="primary-button form-submit"

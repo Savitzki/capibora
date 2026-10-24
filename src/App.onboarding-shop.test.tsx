@@ -77,6 +77,11 @@ beforeEach(() => {
     signIn: vi.fn(),
     signInWithGoogle: vi.fn(),
     signOut: vi.fn(),
+    deleteAccount: vi.fn(),
+    passwordRecovery: false,
+    requestPasswordReset: vi.fn(),
+    updatePassword: vi.fn(),
+    dismissPasswordRecovery: vi.fn(),
     saveProfile: vi.fn().mockResolvedValue(undefined),
   };
   mock.economy = {

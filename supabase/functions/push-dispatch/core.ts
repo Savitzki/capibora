@@ -130,6 +130,17 @@ export async function dispatch(
                 expired++;
                 return;
               }
+              // A confirmation/opt-out can commit while the copy is being reserved.
+              // Reuse the canonical eligibility check at the dispatch boundary.
+              if (!(await rpc<boolean>("push_job_allowed", {
+                p_id: job.job_id, p_lease: job.lease_id,
+              }))) {
+                await rpc("finish_push_job", {
+                  p_id: job.job_id, p_lease: job.lease_id, p_result: "expired",
+                });
+                expired++;
+                return;
+              }
               const status = await send(job, JSON.stringify(payload));
               result =
                 status >= 200 && status < 300
