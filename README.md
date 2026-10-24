@@ -6,6 +6,8 @@ A [identidade Capibora](docs/CAPIBORA.md) preserva contas, dados e funcionalidad
 
 A [revisão de simplificação](docs/SIMPLIFICACAO.md) registra a organização das funções, os controles removidos e os detalhes disponíveis sob demanda.
 
+A [revisão final de regras, segurança e experiência de 24/10/2026](docs/REVISAO-FINAL-2026-10-24.md) reúne evidências, correções e testes das 24 verificações. As migrações **044/045**, a função **delete-account**, a atualização de **push-dispatch** e este frontend estão **preparados, sem implantação nesta revisão**. Veja também o [roteiro físico de celulares](docs/ROTEIRO-PILOTO-CELULARES.md) e a [política técnica de exclusão e retenção](docs/PRIVACIDADE-E-RETENCAO.md).
+
 ## Executar
 
 Requer Node.js **22.12 ou superior** e npm. Ambiente validado com Node 24.
@@ -27,19 +29,19 @@ npm run preview -- --port 4173 --strictPort # validar a compilação localmente
 
 ## Cadastro e banco de dados
 
-[Nicks e amizades](docs/NICKS-E-AMIZADES.md): @nick único e imutável após salvar, sugestões para nomes ocupados, login por nick/senha e busca de amigos com aceite. Nome das frases e avatar seguem editáveis no perfil único, junto do e-mail e do botão de sair. Exige as migrações 014/015 e a Edge Function `login-with-nickname`, já aplicadas e ativas em produção desde 17/10/2026 (veja [Estado atual em produção](#estado-atual-em-produção)).
+[Nicks e amizades](docs/NICKS-E-AMIZADES.md): @nick único e imutável após salvar, sugestões para nomes ocupados, login por nick/senha e busca de amigos com aceite. Nome das frases e avatar seguem editáveis no perfil único, junto do e-mail e do botão de sair. Exige as migrações 014/015 e a Edge Function `login-with-nickname`, já aplicadas e ativas em produção desde 17/10/2026 (veja [registro histórico de produção](#registro-histórico-de-produção)).
 
-“Entrar” abre diretamente o login. Após digitar o e-mail, uma conta existente permanece no login; um endereço novo segue para o cadastro com o e-mail preservado. No cadastro, endereços já existentes retornam ao login. A consulta também ocorre antes de avançar ou autenticar. Exige a migração 013, aplicada no Supabase em 17/10/2026. O frontend com essa verificação já está publicado no GitHub Pages. A consulta retorna apenas um booleano e não envia e-mails.
+“Entrar” abre diretamente o login por e-mail ou nome de usuário. Não há consulta pública de existência de e-mail: a migração 041 removeu esse acesso e o cadastro mantém uma resposta neutra. A recuperação preparada nesta revisão usa o Supabase Auth, preservando seus limites de tentativas e sem revelar se o endereço existe.
 
 Veja o [guia de configuração do Supabase](docs/BANCO-DE-DADOS.md) para criar o banco e habilitar o cadastro. O [guia de amigos, grupos e push](docs/PUSH-E-GRUPOS.md) explica as migrações adicionais, as chaves e o agendador. Com o serviço configurado e a migração 004 aplicada, perfil, novos treinos e pesos podem sincronizar; os lembretes locais ficam no dispositivo, separados por conta. Sem configuração externa, o perfil é local e não cria login.
 
-O cadastro por e-mail pergunta **E-mail → Senha → Nome → Sexo**, uma informação por tela, com uma frase curta de incentivo e opção de voltar preservando o preenchimento. Não mostra contagem, barra de progresso ou cabeçalhos extras. A conta só é criada na última etapa. O modal acompanha a área visível do teclado com `VisualViewport` e `interactive-widget=resizes-content`, mantendo o campo acessível sem rolagem suave concorrendo com a abertura do teclado. Após o envio, há uma tela de confirmação por e-mail com acesso ao login e reenvio do link. Erros do acesso com Google aparecem logo abaixo do botão e recebem foco para ficarem visíveis.
+O cadastro por e-mail pergunta **E-mail → Senha**, com opção de voltar preservando o preenchimento. A conta só é criada no envio final. Depois da confirmação e do login, a conclusão do perfil exige nome de usuário, nome e escolha de sexo/tratamento, aceitando **Prefiro não informar**. O modal acompanha a área visível do teclado com `VisualViewport` e `interactive-widget=resizes-content`. Após o envio, há uma tela de confirmação por e-mail com acesso ao login e reenvio do link. Erros do acesso com Google aparecem junto do botão.
 
 No cadastro e no perfil há nome opcional e o campo **Sexo**, com **Masculino**, **Feminino** ou **Prefiro não informar**. Essa escolha adapta a linguagem das frases; os valores existentes em `user_metadata.display_name` e `phrase_treatment` são preservados, sem nova tabela. Algumas frases usam o primeiro nome (ou o início do nick); nomes longos usam a frase geral para manter uma linha. A escolha pode ser alterada no perfil.
 
 A preferência por estado e a personalização regional foram removidas do cadastro, do perfil e das frases. A migração [007](supabase/migrations/202610170007_remove_state_preference.sql) remove apenas essa preferência antiga dos metadados do Supabase Auth, preservando nome, sexo e demais informações da conta.
 
-Ao enviar o cadastro, contas existentes identificadas pelo Supabase passam para o login, mantendo o e-mail. Contas novas continuam no cadastro aguardando a confirmação.
+Ao enviar o cadastro, a apresentação de confirmação é neutra, inclusive quando o Supabase indica uma conta existente; não revela o cadastro de terceiros.
 
 E-mail e senha são validados em sua própria etapa. Recusas do Supabase identificam o motivo e, quando necessário, voltam ao campo correspondente, preservando as outras informações. Limites de envio e falhas do serviço não são apresentados como erro de preenchimento. O cadastro público depende de SMTP próprio para as confirmações; veja [configuração e diagnóstico de e-mail](docs/BANCO-DE-DADOS.md#se-novos-cadastros-falharem).
 
@@ -47,9 +49,9 @@ O cadastro também oferece **Continuar com Google**, usando a mesma conta Google
 
 A compilação de produção já usa a URL e a chave Publishable públicas do projeto `qfzoeshhogoilsmvxlif`, em `.env.production`. O workflow lê esse arquivo quando as variáveis do GitHub estão vazias. As migrações precisam estar aplicadas no banco; configuração salva não significa conexão online validada. Para usar esse projeto também em desenvolvimento, copie `.env.production` para `.env.local`.
 
-### Estado atual em produção
+### Registro histórico de produção
 
-Conferido em 18/10/2026 no projeto `qfzoeshhogoilsmvxlif`:
+Registro de 18/10/2026, com anotações posteriores, no projeto `qfzoeshhogoilsmvxlif`. Esta lista não representa uma inspeção atual do ambiente; a revisão de 24/10 foi executada em banco descartável e não implantou alterações:
 
 - **Migrações:** estrutura 001–023 instalada. O histórico oficial do Supabase registra 012 e 014–023; as demais versões foram aplicadas manualmente e não constam nele. Confira a estrutura real antes de usar `supabase db push` e não reaplique migrações antigas para preencher o histórico (detalhes em [BANCO-DE-DADOS.md](docs/BANCO-DE-DADOS.md)).
 - **Edge Functions:** `login-with-nickname` está ativa (versão 6, auditoria de 23/10/2026). `push-dispatch` e `group-notify` estão publicadas, e o Cron de push está ativo a cada 15 minutos (auditoria de 23/10/2026). A ativação está em [PUSH-E-GRUPOS.md](docs/PUSH-E-GRUPOS.md).
@@ -82,17 +84,17 @@ A **migração incremental 023 foi autorizada e aplicada em produção em 18/10/
 - [Peso sincronizado entre aparelhos](docs/PESO-E-HORARIOS.md), privado por conta, com várias pesagens imutáveis por dia, horários individuais, recuperação de registros locais, importação opcional do histórico sem conta e fila offline. Exige a migração 011.
 - Corrida diária dentro do grupo: posições e horários pela primeira confirmação online de cada participante com treino obrigatório. Empates compartilham a posição; membros em descanso válido ficam protegidos, sem colocação por treinos voluntários.
 - Fogo centralizado e celebração breve somente após registrar um treino novo; animação desativada quando o aparelho pede movimento reduzido.
-- Peso diário em kg, aceitando vírgula ou ponto e uma casa decimal. Um segundo registro na mesma data atualiza o anterior. Histórico completo e gráfico dos últimos 30 registros, com espaçamento proporcional às datas.
+- Peso em kg, aceitando vírgula ou ponto e uma casa decimal. Várias pesagens imutáveis podem existir na mesma data, cada uma com seu identificador; reenvios não duplicam registros nem a recompensa diária. Histórico e gráfico preservam os registros individuais.
 - Dois lembretes diários independentes, com horário configurável: treino e peso. São desativados por padrão. Ações já registradas no dia não geram lembrete. Um lembrete vencido é exibido na próxima verificação, no máximo uma vez por dia.
 - Alertas dentro do app e notificações do navegador, quando autorizadas.
-- Aba **Arena** com busca por @nick e pedidos aceitos pelo destinatário e grupos de 2 a 8 pessoas. Quem tem treino obrigatório precisa confirmar online no dia do grupo; descansos válidos protegem os demais. Se todos descansarem, a sequência se mantém sem somar. Uma falta sem proteção interrompe a sequência; o recorde permanece. Exige as migrações sociais e a migração 008 no Supabase. A interface está organizada em Grupos, Amigos e Desafios, com resumos compactos e detalhes sob demanda; consulte [Arena](docs/ARENA-INTERFACE.md).
+- Aba **Arena** com busca por @nick e pedidos aceitos pelo destinatário e grupos com limite vigente de cinco participantes para novas entradas; grupos legados maiores são preservados. Quem tem treino obrigatório precisa confirmar online no dia do grupo; descansos válidos protegem os demais. Se todos descansarem, a sequência se mantém sem somar. Uma falta sem proteção interrompe a sequência; o recorde permanece. Exige as migrações sociais e a migração 008 no Supabase. A interface está organizada em Grupos, Amigos e Desafios, com resumos compactos e detalhes sob demanda; consulte [Arena](docs/ARENA-INTERFACE.md).
 - Grupos e amigos em abas próprias, cartões para selecionar o time, busca de amigos, compartilhamento do código e progresso visual das chamas. Formulários e instruções aparecem conforme a ação escolhida.
 - [Aviso opcional ao grupo após o treino](docs/AVISOS-DO-GRUPO.md): escolha os grupos e confirme o envio, ou use **Agora não**. Recuperar histórico não abre a tela nem envia alertas. Exige a migração 005, funções de envio e push autorizado nos aparelhos dos destinatários.
 - Web Push opcional com o app fechado, tom leve ou dramático e chamadas às 6h, 8h e 10h, além do horário salvo e das 21h, enquanto houver treino pendente (atualização 043). Exige a Edge Function, chaves VAPID, cron no Supabase e autorização do celular. Instalar a PWA ou publicar no Pages não ativa esse serviço sozinho.
 
 ## Notificações e horário
 
-O app usa a data e o horário **locais do dispositivo**. Verifica os lembretes a cada 15 segundos e quando a aba volta a ficar visível. Abas suspensas pelo navegador podem atrasar os avisos. Ativar um horário já passado permite avisar ainda no mesmo dia; alterar um horário após o aviso não dispara outro naquele dia.
+O servidor confirma treinos e consolida a ofensiva pelo **fuso fixado na conta**. O relógio do aparelho não autoriza datas retroativas. Lembretes locais usam o mecanismo do app aberto, com verificações a cada 15 segundos e ao retornar à aba; o navegador pode atrasá-los. Alterar um horário após o aviso não dispara outro lembrete local daquela data.
 
 Notificações do sistema dependem de permissão, suporte do navegador e um contexto seguro (**HTTPS** em produção; loopback é aceito no desenvolvimento). Um service worker exibe os avisos em navegadores compatíveis. Permissão bloqueada pode ser alterada nas configurações do navegador. Os alertas internos continuam funcionando sem essa permissão.
 
@@ -130,9 +132,10 @@ não é necessária uma nova migração no Supabase.
 
 A interface mantém a sincronização normal silenciosa e mostra apenas um ponto
 de atividade durante atualizações em segundo plano. Pendências, erros e
-confirmações de consumo continuam visíveis. Regras da Loja, extrato, detalhes
-dos relatórios e explicações secundárias ficam recolhidos e podem ser abertos
-quando necessários; switches não geram avisos de confirmação.
+confirmações de consumo continuam visíveis. O extrato tem contrato no backend,
+mas permanece oculto na Loja por decisão anterior, coberta por teste de regressão.
+Sua exposição depende de decisão de produto. Detalhes dos relatórios e
+explicações secundárias ficam recolhidos; switches não geram avisos de confirmação.
 
 - `src/App.tsx`: painel, formulários, diálogos e agendamento enquanto o app está aberto.
 - `src/model.ts`: tipos, validação, datas, ofensivas e regras dos lembretes.

@@ -14,6 +14,7 @@ import ProgressReports from "./ProgressReports";
 import { freshData, parseData, type Workout } from "./model";
 import {
   readRecordingState,
+  minimumCrossesMidnight,
   sessionSeconds,
   timerText,
   validReview,
@@ -540,4 +541,22 @@ it("sincroniza uma gravação confirmada mesmo após fechar o formulário", asyn
   } finally {
     registered.dispose();
   }
+});
+
+it("orienta a virada usando o relógio e o fuso do servidor", () => {
+  const s = { ...state(), timezone: "America/Sao_Paulo", serverNow: "2026-10-19T02:25:00Z" };
+  expect(minimumCrossesMidnight(s)).toBe(true);
+  expect(minimumCrossesMidnight({ ...s, serverNow: "2026-10-19T02:24:59Z" })).toBe(false);
+  expect(minimumCrossesMidnight({ ...s, serverNow: "2026-10-19T01:30:00Z" })).toBe(false);
+  expect(minimumCrossesMidnight({ ...s, serverNow: "2026-10-19T02:24:00Z" }, 60)).toBe(true);
+  expect(minimumCrossesMidnight({ ...s, timezone: "Pacific/Kiritimati" })).toBe(false);
+});
+it("mostra a orientação somente no cronômetro perto da meia-noite", async () => {
+  const s = { ...state(), timezone: "America/Sao_Paulo", serverNow: "2026-10-19T02:40:00Z", session: null };
+  render(<WorkoutRegistration controller={controller(s)} today={s.today} onStarted={vi.fn()} onConfirmed={vi.fn()} onResume={vi.fn()} />);
+  const message = "O treino conta para o dia em que for finalizado.";
+  expect(screen.queryByText(message)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /Iniciar treino/i }));
+  expect(screen.getByText(message)).toBeVisible();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

@@ -18,6 +18,8 @@ import {
   Dumbbell,
 } from "lucide-react";
 import { useFormViewport } from "./useDialogViewport";
+import { PendingWorkoutLogoutError } from "./accountStorage";
+import DeleteAccount from "./DeleteAccount";
 import { Avatar } from "./Avatar";
 import { ProfileCover } from "./ProfileCosmetics";
 import type { Account } from "./account";
@@ -100,6 +102,8 @@ export default function ProfilePanel({
   );
   const [draft, setDraft] = useState<Profile>(() => profile ?? blankProfile());
   const [busy, setBusy] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  useEffect(() => { setConfirmSignOut(false); }, [account.user?.id]);
   const saving = useRef(false);
   const [initialTreatment, setInitialTreatment] = useState(
     account.phrasePreferences?.treatment === "neutral"
@@ -612,8 +616,9 @@ export default function ProfilePanel({
             setBusy(true);
             setError("");
             try {
-              await account.signOut();
+              await account.signOut(confirmSignOut);
             } catch (failure) {
+              if (failure instanceof PendingWorkoutLogoutError) setConfirmSignOut(true);
               setError(
                 failure instanceof Error
                   ? failure.message
@@ -624,8 +629,17 @@ export default function ProfilePanel({
             }
           }}
         >
-          <LogOut size={17} /> Sair da conta
+          <LogOut size={17} /> {confirmSignOut ? "Sair e descartar rascunhos" : "Sair da conta"}
         </button>
+      )}
+      {account.user && confirmSignOut && (
+        <button className="text-button" disabled={busy} onClick={() => {
+          setConfirmSignOut(false); setError("");
+        }}>Continuar na conta</button>
+      )}
+      {account.user && (
+        <DeleteAccount key={account.user.id} disabled={busy || photoBusy}
+          onDelete={account.deleteAccount} onBusyChange={setBusy} />
       )}
     </div>
   );

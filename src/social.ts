@@ -176,6 +176,15 @@ export function useSocial(
     serverDay ??
     (timezone ? dateInTimezone(new Date(), timezone) : localDate());
   const identity = userId ?? (enabled ? "legacy-social" : null);
+  const rejectionKey = userId ? `${STORAGE_KEY}:account:${userId}:manual-rejection` : null;
+  const rejected = useRef<{ identity: string | null; signature: string; message: string } | null>(null);
+  function rememberRejection(value: { signature: string; message: string } | null) {
+    rejected.current = value ? { identity, ...value } : null;
+    if (rejectionKey) try {
+      if (value) localStorage.setItem(rejectionKey, JSON.stringify(value));
+      else localStorage.removeItem(rejectionKey);
+    } catch { /* Memory still prevents automatic retries during this visit. */ }
+  }
   const resource = useSyncedResource<SocialSnapshot>({
     userId: identity,
     resource: "social",
@@ -191,9 +200,17 @@ export function useSocial(
           w.method === "manual" &&
           validManualConfirmation(w.manualConfirmation),
       );
-      let syncError = "";
+      const signature = pending ? JSON.stringify([pending.id, pending.date, pending.activity, pending.minutes, pending.manualConfirmation]) : "";
+      let refusal = rejected.current?.identity === identity ? rejected.current : null;
+      if (!refusal && rejectionKey) try {
+        const stored = JSON.parse(localStorage.getItem(rejectionKey) ?? "null");
+        if (stored && typeof stored.signature === "string" && typeof stored.message === "string")
+          refusal = { identity, signature: stored.signature, message: stored.message.slice(0, 512) };
+      } catch { /* Invalid receipts cannot confirm or reject server data. */ }
+      if (refusal?.signature !== signature) refusal = null;
+      let syncError = refusal?.message ?? "";
       let pendingFailure: unknown;
-      if (pending) {
+      if (pending && !refusal) {
         try {
           const confirmed = await backendRpc<Workout>(
             "confirm_manual_workout",
@@ -214,9 +231,13 @@ export function useSocial(
         } catch (e) {
           pendingFailure = e;
           syncError = (e as Error).message;
+          if (resource.isCurrent() && syncProblem(e).kind === "validation")
+            rememberRejection({ signature, message: syncError.slice(0, 512) });
         }
       }
       const next = readSocialState(await backendRpc("get_social_state"));
+      if (resource.isCurrent() && (!pending || next.workouts.some((w) => w.date === pending.date)))
+        rememberRejection(null);
       // Another device may already have confirmed the same day. Recover that
       // authoritative record before retrying a local declaration.
       if (pendingFailure && !next.workouts.some((w) => w.date === pending?.date) &&

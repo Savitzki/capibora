@@ -92,7 +92,7 @@ for (const [status, result] of [
           ? [job]
           : name === "reserve_push_message"
             ? args.p_message_id
-            : null
+            : name === "push_job_allowed" ? true : null
       ) as T;
     };
     const response = await dispatch(
@@ -174,6 +174,7 @@ Deno.test(
     ): Promise<T> => {
       if (name === "claim_push_jobs")
         return [{ ...job, message_id: saved }] as T;
+      if (name === "push_job_allowed") return true as T;
       if (name === "reserve_push_message") {
         assert.equal(args.p_message_id, saved);
         return saved as T;
@@ -222,7 +223,7 @@ Deno.test("morning cadence delivers distinct slots with morning copy", async () 
   const tags: string[] = [];
   const response = await dispatch(request(), { cronSecret: "cron", publicKey: "public" },
     async <T>(name: string, args: Record<string, unknown>): Promise<T> =>
-      (name === "claim_push_jobs" ? jobs : name === "reserve_push_message" ? args.p_message_id : null) as T,
+      (name === "claim_push_jobs" ? jobs : name === "reserve_push_message" ? args.p_message_id : name === "push_job_allowed" ? true : null) as T,
     async (current, payload) => {
       assert.equal(selectPushCopy(current)?.period, "morning");
       tags.push(JSON.parse(payload).tag);
@@ -230,4 +231,17 @@ Deno.test("morning cadence delivers distinct slots with morning copy", async () 
     });
   assert.equal((await response.json()).sent, 3);
   assert.equal(new Set(tags).size, 3);
+});
+
+Deno.test("a confirmation arriving after reservation suppresses dispatch", async () => {
+  let sends = 0;
+  const calls: string[] = [];
+  const response = await dispatch(request(), { cronSecret: "cron", publicKey: "public" },
+    async <T>(name: string, args: Record<string, unknown>): Promise<T> => {
+      calls.push(name);
+      return (name === "claim_push_jobs" ? [job] : name === "reserve_push_message" ? args.p_message_id : name === "push_job_allowed" ? false : null) as T;
+    }, async () => { sends++; return 201; });
+  assert.equal(sends, 0);
+  assert.equal((await response.json()).expired, 1);
+  assert.deepEqual(calls, ["claim_push_jobs", "reserve_push_message", "push_job_allowed", "finish_push_job"]);
 });

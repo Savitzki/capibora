@@ -1,5 +1,9 @@
 project_id = "fokus-trainer"
 
+[functions.delete-account]
+# The handler validates the captured bearer token with Auth before any admin call.
+verify_jwt = false
+
 [functions.push-dispatch]
 # Private cron endpoint: authentication is checked with x-cron-secret in the handler.
 verify_jwt = false

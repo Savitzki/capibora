@@ -26,6 +26,11 @@ function account() {
     resendConfirmation: vi.fn().mockResolvedValue(undefined),
     signIn: vi.fn(),
     signOut: vi.fn(),
+    deleteAccount: vi.fn(),
+    passwordRecovery: false,
+    requestPasswordReset: vi.fn(),
+    updatePassword: vi.fn(),
+    dismissPasswordRecovery: vi.fn(),
     signInWithGoogle: vi.fn().mockResolvedValue(undefined),
     saveProfile: vi.fn(),
   } satisfies Account;

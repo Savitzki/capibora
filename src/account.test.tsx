@@ -7,6 +7,7 @@ const provider = vi.hoisted(() => ({
   getUser: vi.fn(),
   signUp: vi.fn(),
   resend: vi.fn(),
+  resetPassword: vi.fn(),
   signIn: vi.fn(),
   setSession: vi.fn(),
   rpc: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("@supabase/supabase-js", () => ({
       getUser: provider.getUser,
       signUp: provider.signUp,
       resend: provider.resend,
+      resetPasswordForEmail: provider.resetPassword,
       signInWithPassword: provider.signIn,
       setSession: provider.setSession,
       signInWithOAuth: provider.google,
@@ -45,6 +47,7 @@ vi.mock("@supabase/supabase-js", () => ({
   }),
 }));
 const session = (id = "user-a") => ({
+  access_token: `captured-${id}`,
   user: { id, email: "test@example.invalid" },
 });
 const row = {
@@ -72,6 +75,7 @@ beforeEach(() => {
   provider.upsert.mockResolvedValue({ error: null });
   provider.signUp.mockResolvedValue({ data: { session: null }, error: null });
   provider.resend.mockResolvedValue({ error: null });
+  provider.resetPassword.mockResolvedValue({ data: {}, error: null });
   provider.signIn.mockResolvedValue({ error: null });
   provider.setSession.mockResolvedValue({ error: null });
   provider.rpc.mockResolvedValue({
@@ -595,4 +599,117 @@ it("resposta de confirmação atrasada não reabre sessão após logout", async 
   act(()=>provider.onChange!("SIGNED_OUT",null));
   await act(async()=>finish({ data: { user: { ...session().user, email_confirmed_at: "2026-10-20T12:00:00Z" } }, error: null }));
   expect(result.current.user).toBeNull();
+});
+
+it("não descarta um registro manual pendente no logout sem confirmação", async () => {
+  const key = `${STORAGE_KEY}:account:user-a`;
+  const data = freshData();
+  data.workouts = [{ id: crypto.randomUUID(), date: "2026-10-24", activity: "Caminhada", minutes: 35, method: "manual" }];
+  localStorage.setItem(key, JSON.stringify(data));
+  const { useAccount } = await import("./account");
+  const hook = renderHook(useAccount);
+  await waitFor(() => expect(hook.result.current.user?.id).toBe("user-a"));
+  await expect(hook.result.current.signOut()).rejects.toThrow(/rascunhos serão descartados/);
+  expect(provider.signOut).not.toHaveBeenCalled();
+  expect(localStorage.getItem(key)).not.toBeNull();
+  await act(async () => { await hook.result.current.signOut(true); });
+  expect(localStorage.getItem(key)).toBeNull();
+  expect(hook.result.current.user).toBeNull();
+});
+it("exclui a própria conta com token capturado e limpa somente seus caches após confirmação", async () => {
+  const own = `${STORAGE_KEY}:account:user-a`;
+  const other = `${STORAGE_KEY}:account:user-b`;
+  localStorage.setItem(own, JSON.stringify(freshData()));
+  localStorage.setItem(other, "keep-other-account");
+  vi.mocked(fetch).mockResolvedValue(Response.json({ deleted: true }));
+  const { useAccount } = await import("./account");
+  const hook = renderHook(useAccount);
+  await waitFor(() => expect(hook.result.current.user?.id).toBe("user-a"));
+  await act(async () => { await hook.result.current.deleteAccount(); });
+  const [, init] = vi.mocked(fetch).mock.calls[0];
+  expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer captured-user-a");
+  expect(JSON.parse(String(init?.body))).toEqual({ confirmation: "EXCLUIR MINHA CONTA" });
+  expect(localStorage.getItem(own)).toBeNull();
+  expect(localStorage.getItem(other)).toBe("keep-other-account");
+  expect(provider.signOut).toHaveBeenCalledWith({ scope: "local" });
+  expect(hook.result.current.user).toBeNull();
+});
+it("não limpa dados nem informa exclusão antes da confirmação do servidor", async () => {
+  const key = `${STORAGE_KEY}:account:user-a`;
+  localStorage.setItem(key, JSON.stringify(freshData()));
+  vi.mocked(fetch).mockResolvedValue(Response.json({ error: "not deployed" }, { status: 503 }));
+  const { useAccount } = await import("./account");
+  const hook = renderHook(useAccount);
+  await waitFor(() => expect(hook.result.current.user?.id).toBe("user-a"));
+  await expect(hook.result.current.deleteAccount()).rejects.toThrow(/precisa ser ativada/);
+  expect(provider.signOut).not.toHaveBeenCalled();
+  expect(localStorage.getItem(key)).not.toBeNull();
+  expect(hook.result.current.user?.id).toBe("user-a");
+});
+it("uma exclusão em andamento não apaga a conta que entrou depois", async () => {
+  let resolve!: (value: Response) => void;
+  vi.mocked(fetch).mockImplementation(() => new Promise<Response>((done) => { resolve = done; }));
+  const other = `${STORAGE_KEY}:account:user-b`;
+  localStorage.setItem(other, "new-account-private");
+  const { useAccount } = await import("./account");
+  const hook = renderHook(useAccount);
+  await waitFor(() => expect(hook.result.current.user?.id).toBe("user-a"));
+  let operation!: Promise<void>;
+  act(() => { operation = hook.result.current.deleteAccount(); });
+  await act(async () => { provider.onChange?.("SIGNED_IN", session("user-b")); });
+  await act(async () => { resolve(Response.json({ deleted: true })); await operation; });
+  expect(hook.result.current.user?.id).toBe("user-b");
+  expect(provider.signOut).not.toHaveBeenCalled();
+  expect(localStorage.getItem(other)).toBe("new-account-private");
+});
+
+it("solicita recuperação pelo Auth sem consultar existência pública de e-mail", async () => {
+  const { useAccount } = await import("./account");
+  const hook = renderHook(useAccount);
+  await act(async () => { await hook.result.current.requestPasswordReset("synthetic@example.invalid"); });
+  expect(provider.resetPassword).toHaveBeenCalledWith("synthetic@example.invalid", { redirectTo: expect.any(String) });
+  expect(provider.rpc).not.toHaveBeenCalledWith("account_email_exists", expect.anything());
+});
+it("recupera o formulário após reabrir e só atualiza a senha com a sessão capturada", async () => {
+  const { useAccount } = await import("./account");
+  const first = renderHook(useAccount);
+  await waitFor(() => expect(first.result.current.user?.id).toBe("user-a"));
+  act(() => { provider.onChange?.("PASSWORD_RECOVERY", session()); });
+  expect(first.result.current.passwordRecovery).toBe(true);
+  first.unmount();
+  const reopened = renderHook(useAccount);
+  await waitFor(() => expect(reopened.result.current.passwordRecovery).toBe(true));
+  vi.mocked(fetch).mockResolvedValue(Response.json({ id: "user-a" }));
+  await act(async () => { await reopened.result.current.updatePassword("synthetic-new-password"); });
+  const [, init] = vi.mocked(fetch).mock.calls.at(-1)!;
+  expect(init?.method).toBe("PUT");
+  expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer captured-user-a");
+  expect(JSON.parse(String(init?.body))).toEqual({ password: "synthetic-new-password" });
+  act(() => reopened.result.current.dismissPasswordRecovery());
+  expect(reopened.result.current.passwordRecovery).toBe(false);
+  expect(sessionStorage.getItem(`${STORAGE_KEY}:account:user-a:password-recovery`)).toBeNull();
+});
+it("um link expirado não confirma alteração de senha nem encerra a recuperação", async () => {
+  const { useAccount } = await import("./account");
+  const hook = renderHook(useAccount);
+  await waitFor(() => expect(hook.result.current.user?.id).toBe("user-a"));
+  act(() => { provider.onChange?.("PASSWORD_RECOVERY", session()); });
+  vi.mocked(fetch).mockResolvedValue(Response.json({}, { status: 401 }));
+  await expect(hook.result.current.updatePassword("synthetic-new-password")).rejects.toThrow(/link expirou/);
+  expect(hook.result.current.passwordRecovery).toBe(true);
+});
+it("limpa o cache privado ao trocar diretamente de usuário e informa a perda de pendências", async () => {
+  const key = `${STORAGE_KEY}:account:user-a`;
+  const data = freshData();
+  data.workouts = [{ id: crypto.randomUUID(), date: "2026-10-24", activity: "Yoga", minutes: 35, method: "manual" }];
+  localStorage.setItem(key, JSON.stringify(data));
+  const { useAccount } = await import("./account");
+  const hook = renderHook(useAccount);
+  await waitFor(() => expect(hook.result.current.user?.id).toBe("user-a"));
+  act(() => { provider.onChange?.("SIGNED_IN", session("user-b")); });
+  expect(localStorage.getItem(key)).toBeNull();
+  expect(hook.result.current.authNotice).toContain("registros locais sem confirmação");
+  act(() => { provider.onChange?.("SIGNED_IN", session("user-b")); });
+  expect(hook.result.current.authNotice).toContain("registros locais sem confirmação");
+  expect(hook.result.current.user?.id).toBe("user-b");
 });

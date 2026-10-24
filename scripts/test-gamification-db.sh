@@ -11,7 +11,7 @@ docker exec "$task_container" pg_isready -h 127.0.0.1 -U postgres >/dev/null
 docker exec -i "$task_container" psql -U postgres -v ON_ERROR_STOP=1 < "$task_root/supabase/tests/bootstrap.sql"
 docker exec "$task_container" psql -U postgres -c 'alter table auth.users add column email text;'
 for file in "$task_root"/supabase/migrations/*.sql; do
- if [[ "$file" == *202610220042* || "$file" == *202610200039* || "$file" == *202610210040* || "$file" == *202610220041* ]];then continue;fi
+ if [[ "$file" == *202610240044* || "$file" == *202610240045* || "$file" == *202610220042* || "$file" == *202610200039* || "$file" == *202610210040* || "$file" == *202610220041* ]];then continue;fi
  if [[ "$file" == *202610200038_group_capacity_five.sql || "$file" == *202610200037_arena_taunt_replies.sql || "$file" == *202610200036_friend_profile.sql || "$file" == *202610200035_query_indexes.sql || "$file" == *202610200033_arena_groups.sql || "$file" == *202610200034_arena_interactions.sql || "$file" == *202610190030_profile_cosmetics.sql || "$file" == *202610200031_automatic_medical_kits.sql || "$file" == *202610200032_achievement_catalog.sql ]];then continue;fi
  if [[ "$file" == *202610180023_workout_recording.sql ]];then
   docker exec -i "$task_container" psql -U postgres -v ON_ERROR_STOP=1 < "$task_root/supabase/tests/workout-recording-legacy-setup.sql"
@@ -170,3 +170,11 @@ docker exec -i "$task_container" psql -U postgres -v ON_ERROR_STOP=1 < "$task_ro
 docker exec -i "$task_container" psql -U postgres -v ON_ERROR_STOP=1 < "$task_root/supabase/migrations/202610220042_protection_eligibility_friend_lookup.sql"
 docker exec -i "$task_container" psql -U postgres -v ON_ERROR_STOP=1 < "$task_root/supabase/tests/protection-eligibility.sql"
 bash "$task_root/scripts/test-protection-eligibility-concurrency.sh" "$task_container"
+
+# Final review changes are checked only after every prior contract has passed.
+for final_file in 202610240044_transaction_day_boundary 202610240045_account_deletion_privacy; do
+ docker exec -i "$task_container" psql -U postgres -v ON_ERROR_STOP=1 < "$task_root/supabase/migrations/$final_file.sql"
+done
+for final_test in midnight-boundary account-deletion; do
+ docker exec -i "$task_container" psql -U postgres -v ON_ERROR_STOP=1 < "$task_root/supabase/tests/$final_test.sql"
+done

@@ -24,13 +24,19 @@ export default function AccountForm({
   profile: Profile | null;
   onSignedIn: () => void;
 }) {
-  const [mode, setMode] = useState<"welcome" | "signup" | "signin">("welcome");
+  const [mode, setMode] = useState<"welcome" | "signup" | "signin" | "recovery">("welcome");
   const [step, setStep] = useState(0);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [message, setMessage] = useState("");
+  const [resetCooldown, setResetCooldown] = useState(false);
+  useEffect(() => {
+    if (!resetCooldown) return;
+    const timer = window.setTimeout(() => setResetCooldown(false), 60000);
+    return () => window.clearTimeout(timer);
+  }, [resetCooldown]);
   const [error, setError] = useState("");
   const [errorField, setErrorField] = useState<AccountField>();
   const [googleError, setGoogleError] = useState("");
@@ -55,7 +61,7 @@ export default function AccountForm({
     }
     if (account.user || !account.configured) return;
     const input =
-      mode === "signup"
+      mode === "recovery" ? emailInput.current : mode === "signup"
         ? stepRoot.current?.querySelector<HTMLElement>("input, select")
         : email
           ? passwordInput.current
@@ -109,12 +115,12 @@ export default function AccountForm({
     }
     return true;
   }
-  function changeMode(next: "signup" | "signin") {
+  function changeMode(next: "signup" | "signin" | "recovery") {
     setMode(next);
     setStep(0);
     setAwaitingConfirmation(false);
     setPassword("");
-    if (next === "signup" && !isEmailAddress(email)) setEmail("");
+    if ((next === "signup" || next === "recovery") && !isEmailAddress(email)) setEmail("");
     clearFeedback();
   }
   async function resendConfirmation() {
@@ -153,6 +159,19 @@ export default function AccountForm({
   }
   async function submitCurrent() {
     clearFeedback();
+    if (mode === "recovery") {
+      if (resetCooldown || !validEmail()) return;
+      setBusy(true);
+      try {
+        await account.requestPasswordReset(email);
+        if (alive.current) {
+          setMessage("Se houver uma conta com esse e-mail, você receberá um link para criar uma nova senha. Confira também o spam.");
+          setResetCooldown(true);
+        }
+      } catch (error) { if (alive.current) showError(error); }
+      finally { if (alive.current) setBusy(false); }
+      return;
+    }
     // Previous fields are unmounted; validate them again before the final request.
     const finalStep = step === 1;
     const nicknameLogin =
@@ -315,6 +334,21 @@ export default function AccountForm({
       </div>
     );
 
+  if (mode === "recovery") return (
+    <form onSubmit={submit} className="account-form" noValidate>
+      <h3>Recuperar senha</h3>
+      <label className="form-label">E-mail
+        <input ref={emailInput} type="email" autoComplete="email" required maxLength={254}
+          disabled={busy} value={email} onChange={(event) => { setEmail(event.target.value); clearFeedback(); }} />
+      </label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {message && <p role="status">{message}</p>}
+      <button className="primary-button form-submit" disabled={busy || resetCooldown}>
+        {busy ? "Enviando…" : resetCooldown ? "Aguarde para reenviar" : "Enviar link de recuperação"}
+      </button>
+      <button type="button" className="text-button" disabled={busy} onClick={() => changeMode("signin")}>Voltar para entrar</button>
+    </form>
+  );
   const signingUp = mode === "signup";
   const emailField = (
     <label className="form-label">
@@ -516,6 +550,10 @@ export default function AccountForm({
             (step === 1 ? <Check size={19} /> : <ArrowRight size={19} />)}
         </button>
       </div>
+      {!signingUp && (
+        <button type="button" className="text-button auth-mode" disabled={busy}
+          onClick={() => changeMode("recovery")}>Esqueci minha senha</button>
+      )}
       {!signingUp && (
         <button
           type="button"

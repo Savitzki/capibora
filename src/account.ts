@@ -4,6 +4,7 @@ import { accountAuthError } from "./accountErrors";
 import {
   accountStorageGeneration,
   checkPendingWeights,
+  checkPendingWorkouts,
   clearAccountStorage,
 } from "./accountStorage";
 import {
@@ -25,6 +26,8 @@ import {
   getBackendClient,
   googleProviderEnabled,
   requestNicknameSession,
+  requestAccountDeletion,
+  requestPasswordChange,
 } from "./backend";
 import { useSyncedResource } from "./useSyncedResource";
 import { invalidateSync, withSync, withSyncTimeout } from "./sync";
@@ -44,7 +47,7 @@ function authReturnNotice() {
     : url.searchParams;
   if (!authErrorKeys.some((key) => params.has(key))) return "";
   if (params.get("error_code") === "otp_expired")
-    return "Esse link de confirmação expirou ou já foi usado. Entre na sua conta ou use Reenviar confirmação no cadastro.";
+    return "Esse link expirou ou já foi usado. Use Reenviar confirmação no cadastro ou Esqueci minha senha para pedir outro link.";
   return params.get("error") === "access_denied"
     ? "A entrada foi cancelada. Você pode tentar novamente quando quiser."
     : "Não foi possível concluir a entrada. Tente novamente ou use e-mail e senha.";
@@ -67,6 +70,7 @@ export function useAccount() {
   const currentUser = useRef<string | null>(null);
   const metadataRevision = useRef(0);
   const [error, setError] = useState("");
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [authNotice, setAuthNotice] = useState(authReturnNotice);
   useEffect(() => {
     if (!accountConfigured) return;
@@ -79,22 +83,32 @@ export function useAccount() {
         let authRevision = 0;
         subscription = client.auth.onAuthStateChange((event, next) => {
           if (!cancelled) {
+            const previousUser = currentUser.current;
+            let restoreRecovery = false;
+            if (next) try {
+              const marker = `${STORAGE_KEY}:account:${next.user.id}:password-recovery`;
+              if (event === "PASSWORD_RECOVERY") sessionStorage.setItem(marker, "pending");
+              restoreRecovery = sessionStorage.getItem(marker) === "pending";
+            } catch { /* Recovery remains available in memory. */ }
+            setPasswordRecovery((previous) => Boolean(next && (event === "PASSWORD_RECOVERY" || restoreRecovery || (previousUser === next.user.id && previous))));
             metadataRevision.current++;
             authRevision++;
-            if (event === "SIGNED_OUT" && currentUser.current) {
+            let departureNotice = "";
+            if (previousUser && (event === "SIGNED_OUT" || previousUser !== next?.user.id)) {
+              try { checkPendingWeights(previousUser); checkPendingWorkouts(previousUser); }
+              catch { departureNotice = "A sessão anterior terminou. Os registros locais sem confirmação foram removidos deste aparelho."; }
               try {
-                clearAccountStorage(currentUser.current);
+                clearAccountStorage(previousUser);
               } catch {
-                setError(
-                  "Você saiu, mas o navegador não permitiu limpar todos os dados locais.",
-                );
+                departureNotice = "A sessão anterior terminou, mas o navegador não permitiu limpar todos os dados locais.";
               }
             }
             currentUser.current = next?.user.id ?? null;
             if (next && event === "SIGNED_IN") {
-              setAuthNotice("");
+              if (!previousUser || previousUser !== next.user.id || departureNotice)
+                setAuthNotice(departureNotice);
               setError("");
-            }
+            } else if (departureNotice) setAuthNotice(departureNotice);
             setSession(next);
             setInitializing(false);
           }
@@ -111,6 +125,9 @@ export function useAccount() {
         if (revision === authRevision) {
           currentUser.current = data.session?.user.id ?? null;
           setSession(data.session);
+          if (data.session) try {
+            setPasswordRecovery(sessionStorage.getItem(`${STORAGE_KEY}:account:${data.session.user.id}:password-recovery`) === "pending");
+          } catch { /* No persistent recovery state. */ }
         }
         setInitializing(false);
       } catch {
@@ -292,11 +309,14 @@ export function useAccount() {
       );
     }
   }
-  async function signOut() {
+  async function signOut(discardPendingWorkouts = false) {
     const client = await clientPromise;
     if (!client) return;
     const leavingUser = userId;
-    if (leavingUser) checkPendingWeights(leavingUser);
+    if (leavingUser) {
+      checkPendingWeights(leavingUser);
+      if (!discardPendingWorkouts) checkPendingWorkouts(leavingUser);
+    }
     if ("serviceWorker" in navigator) {
       const registration = await navigator.serviceWorker.getRegistration();
       const subscription = await registration?.pushManager?.getSubscription();
@@ -317,8 +337,70 @@ export function useAccount() {
     if (leavingUser) clearAccountStorage(leavingUser);
     currentUser.current = null;
     setSession(null);
+    setPasswordRecovery(false);
     setAuthNotice("");
     setError("");
+  }
+  async function requestPasswordReset(email: string) {
+    if (!isEmailAddress(email)) throw new Error("Informe um e-mail válido para recuperar sua senha");
+    const client = await clientPromise;
+    if (!client) throw new Error("O serviço online ainda não foi configurado");
+    try {
+      const { error } = await client.auth.resetPasswordForEmail(email.trim(), { redirectTo: authRedirectUrl() });
+      if (error) throw error;
+    } catch {
+      throw new Error("Não foi possível solicitar o link agora. Aguarde um pouco e tente novamente");
+    }
+  }
+  function dismissPasswordRecovery() {
+    if (userId) try { sessionStorage.removeItem(`${STORAGE_KEY}:account:${userId}:password-recovery`); } catch { /* Memory is authoritative for this visit. */ }
+    setPasswordRecovery(false);
+  }
+  async function updatePassword(password: string) {
+    const changingUser = userId;
+    const accessToken = session?.access_token;
+    if (!changingUser || !accessToken || currentUser.current !== changingUser)
+      throw new Error("O link expirou. Solicite outro link de recuperação");
+    if (password.length < 8 || password.length > 128)
+      throw new Error("Use uma senha entre 8 e 128 caracteres");
+    try { await requestPasswordChange(accessToken, password); }
+    catch (error) {
+      if (error instanceof TypeError) throw new Error("Não foi possível conectar. Sua senha não foi confirmada. Tente novamente");
+      throw error;
+    }
+    // The active recovery form dismisses only after it receives this confirmation.
+  }
+  async function deleteAccount() {
+    const deletingUser = userId;
+    const accessToken = session?.access_token;
+    if (!deletingUser || !accessToken || currentUser.current !== deletingUser)
+      throw new Error("Entre novamente antes de excluir sua conta");
+    if (!navigator.onLine) throw new Error("Conecte-se à internet para excluir sua conta");
+    await requestAccountDeletion(accessToken);
+    let cleanupFailed = false;
+    try { clearAccountStorage(deletingUser); } catch { cleanupFailed = true; }
+    if (currentUser.current !== deletingUser) return;
+    try {
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration();
+        const subscription = await registration?.pushManager?.getSubscription();
+        if (currentUser.current === deletingUser) await subscription?.unsubscribe();
+      }
+    } catch { /* All server-side subscriptions have already been deleted. */ }
+    if (currentUser.current !== deletingUser) return;
+    const client = await clientPromise;
+    try {
+      const result = await client?.auth.signOut({ scope: "local" });
+      if (result?.error) cleanupFailed = true;
+    } catch { cleanupFailed = true; }
+    if (currentUser.current !== null && currentUser.current !== deletingUser) return;
+    currentUser.current = null;
+    setSession(null);
+    setPasswordRecovery(false);
+    setAuthNotice("");
+    setError(cleanupFailed
+      ? "Conta excluída. Feche o app e limpe os dados deste site para concluir a limpeza neste aparelho."
+      : "");
   }
   async function saveProfile(
     next: Profile,
@@ -434,6 +516,11 @@ export function useAccount() {
       signIn,
       signInWithGoogle,
       signOut,
+      deleteAccount,
+      passwordRecovery,
+      requestPasswordReset,
+      updatePassword,
+      dismissPasswordRecovery,
       saveProfile,
     },
     profileResource.sync,

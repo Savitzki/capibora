@@ -13,6 +13,7 @@ const makeAccount = () =>
     signIn: vi.fn().mockResolvedValue(undefined),
     signInWithGoogle: vi.fn(),
     resendConfirmation: vi.fn(),
+    requestPasswordReset: vi.fn().mockResolvedValue(undefined),
   }) as unknown as Account;
 async function signup(auth = makeAccount()) {
   const signedIn = vi.fn(),
@@ -150,4 +151,21 @@ it("abre com as três ações na ordem aprovada e Google não depende dos campos
   await userEvent.click(screen.getByRole("button", { name: "Continuar com Google" }));
   expect(auth.signInWithGoogle).toHaveBeenCalledOnce();
   expect(auth.signUp).not.toHaveBeenCalled();
+});
+
+it("oferece recuperação por e-mail com resposta neutra e sem pedir a senha antiga", async () => {
+  const auth = makeAccount();
+  const user = userEvent.setup();
+  render(<AccountForm account={auth} profile={null} onSignedIn={vi.fn()} />);
+  await user.click(screen.getByRole("button", { name: "Entrar" }));
+  await user.type(screen.getByLabelText("E-mail ou nome de usuário"), "synthetic.nick");
+  await user.click(screen.getByRole("button", { name: "Esqueci minha senha" }));
+  expect(screen.getByLabelText("E-mail")).toHaveValue("");
+  expect(screen.queryByLabelText("Senha")).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText("E-mail"), "synthetic@example.invalid");
+  await user.click(screen.getByRole("button", { name: "Enviar link de recuperação" }));
+  expect(auth.requestPasswordReset).toHaveBeenCalledWith("synthetic@example.invalid");
+  expect(screen.getByRole("status")).toHaveTextContent(/Se houver uma conta/);
+  expect(screen.getByRole("button", { name: "Aguarde para reenviar" })).toBeDisabled();
+  expect(auth.signIn).not.toHaveBeenCalled();
 });

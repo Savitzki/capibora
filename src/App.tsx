@@ -53,6 +53,7 @@ import {
 } from "./model";
 import { claimReminder } from "./reminders";
 import { notify } from "./notifications";
+import PasswordRecovery from "./PasswordRecovery";
 import InstallApp from "./InstallApp";
 import { useAccount, type Account } from "./account";
 import { lazyPanel } from "./LazyPanel";
@@ -269,6 +270,7 @@ function TrainerApp({
     | "plan-ready"
     | "workout-review"
     | "automatic-kit"
+    | "password-recovery"
     | "missed-workout"
     | null
   >(null);
@@ -276,6 +278,11 @@ function TrainerApp({
   const [reviewWorkout, setReviewWorkout] = useState<Workout | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [workoutBusy, setWorkoutBusy] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  useEffect(() => {
+    if (account.passwordRecovery && !opening && !modal) setModal("password-recovery");
+    else if (!account.passwordRecovery && modal === "password-recovery") setModal(null);
+  }, [account.passwordRecovery, opening, modal]);
   const [missedDay, setMissedDay] = useState<string | null>(null);
   const [missedBusy, setMissedBusy] = useState(false);
   const [missedTitle, setMissedTitle] = useState("Não treinei hoje");
@@ -1487,7 +1494,7 @@ function TrainerApp({
       {modal && (
         <Modal
           title={
-            modal === "missed-workout"
+            modal === "password-recovery" ? "Criar nova senha" : modal === "missed-workout"
               ? missedTitle
               : modal === "automatic-kit"
                 ? "Kit Médico usado automaticamente"
@@ -1525,6 +1532,7 @@ function TrainerApp({
             modal !== "missed-workout"
           }
           closeDisabled={
+            (modal === "password-recovery" && recoveryBusy) ||
             ((modal === "workout" || modal === "workout-review") &&
               workoutBusy) ||
             (modal === "training-plan" && (planBusy || training.busy)) ||
@@ -1545,6 +1553,7 @@ function TrainerApp({
             modal === "missed-workout"
           }
           onClose={() => {
+            if (modal === "password-recovery") account.dismissPasswordRecovery();
             if (modal === "missed-workout") setMissedDay(null);
             if (modal === "plan-ready") navigate("overview");
             if (modal === "automatic-kit") {
@@ -1559,7 +1568,10 @@ function TrainerApp({
             setModal(null);
           }}
         >
-          {modal === "missed-workout" && missedDay ? (
+          {modal === "password-recovery" ? (
+            <PasswordRecovery onSave={account.updatePassword} onBusyChange={setRecoveryBusy}
+              onSaved={() => { account.dismissPasswordRecovery(); setModal(null); setToast("Senha atualizada"); }} />
+          ) : modal === "missed-workout" && missedDay ? (
             <MissedWorkout
               key={missedDay}
               day={missedDay}

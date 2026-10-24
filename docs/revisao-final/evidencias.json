@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-24",
+  "base": "9a47884e984d8366003190ff1147fcfcf785afbf",
+  "environment": "Chromium 154 local; synthetic APIs; no physical phone test",
+  "visual": {
+    "widths": [
+      320,
+      375,
+      390,
+      430,
+      768,
+      1280
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "states": 132,
+    "errors": [],
+    "unknown": []
+  },
+  "pwaUpgrade": {
+    "preservedForm": true,
+    "waiting": {
+      "active": "activated"
+    },
+    "sessionPreserved": true,
+    "pendingIdPreserved": true,
+    "oldCaches": [
+      "fokus-trainer:http://127.0.0.1:4174/capibora/:8809dc4dd615b300"
+    ],
+    "newCaches": [
+      "fokus-trainer:http://127.0.0.1:4174/capibora/:840379f1681f2795"
+    ],
+    "workers": [
+      {
+        "name": "fokus-trainer:http://127.0.0.1:4174/capibora/:840379f1681f2795",
+        "clients": [
+          "http://127.0.0.1:4174/capibora/"
+        ]
+      }
+    ],
+    "newVersionOffline": true,
+    "cacheVersionChanged": true,
+    "privateResponsesCached": [],
+    "offlineOpened": true,
+    "errors": [],
+    "unexpected": []
+  },
+  "achievementAssets": {
+    "catalogCount": 28,
+    "mappedCount": 19,
+    "missingMappedFiles": [],
+    "officialArtNotProvided": [
+      "week-1",
+      "week-2",
+      "week-4",
+      "week-8",
+      "week-10",
+      "week-20",
+      "weight-1",
+      "weight-7",
+      "weight-30"
+    ]
+  },
+  "physicalTests": "PENDING",
+  "productionDeployment": "NOT_PERFORMED"
+}

@@ -41,3 +41,5 @@ jobs:
           supabase/functions/login-with-nickname/index.test.ts
           supabase/functions/group-notify/core.test.ts
           supabase/functions/push-dispatch/core.test.ts
+          supabase/functions/delete-account/core.test.ts
+          supabase/functions/delete-account/service.test.ts

@@ -1,4 +1,4 @@
-import { STORAGE_KEY } from "./model";
+import { parseData, STORAGE_KEY } from "./model";
 import { readWeightCache } from "./weightSync";
 import { clearSyncAccount } from "./sync";
 
@@ -15,6 +15,20 @@ export function checkPendingWeights(userId: string) {
     throw new Error(
       "Há pesos que ainda não foram salvos na conta. Abra Peso, sincronize ou resolva os registros pendentes e tente sair novamente.",
     );
+}
+
+export class PendingWorkoutLogoutError extends Error {
+  constructor() {
+    super("Há registros manuais que ainda não foram confirmados na conta. Ao sair, esses rascunhos serão descartados.");
+  }
+}
+export function checkPendingWorkouts(userId: string) {
+  const raw = localStorage.getItem(`${STORAGE_KEY}:account:${userId}`);
+  if (!raw) return;
+  let data;
+  try { data = parseData(raw); } catch { return; }
+  if (data.workouts.some((w) => w.method === "manual" && !w.confirmedAt))
+    throw new PendingWorkoutLogoutError();
 }
 
 export function clearAccountStorage(userId: string) {
